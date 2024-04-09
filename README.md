@@ -30,7 +30,7 @@ appropriate file protections in place.
     The Excel template present in the repository can be used to prepare the metadata.
 
 ### After execution:
-    A new column will be added to the right containing the status of each line. Successfully updated rows will be set to 'success' and will be skipped on future runs.
+**A new column will be added to the right containing the status of each line. Successfully updated rows will be set to 'success' and will be skipped on future runs.**
     
 ### Running the script
     py bulk-update-applications.py -f <excel_file_with_application_definitions> [-r <header_row>] [-d]"
