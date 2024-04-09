@@ -309,7 +309,7 @@ def update_application(api_base, excel_headers, excel_sheet, row, verbose):
         print(f"Calling API at: {path}")
         print(request_content)
 
-    response = requests.put(path, auth=RequestsAuthPluginVeracodeHMAC(), headers=json_headers, json=json.loads(request_content))
+    response = requests.patch(path, auth=RequestsAuthPluginVeracodeHMAC(), headers=json_headers, json=json.loads(request_content))
 
     if verbose:
         print(f"status code {response.status_code}")
