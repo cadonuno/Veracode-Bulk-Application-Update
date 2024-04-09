@@ -49,9 +49,9 @@ non_custom_field_headers={"Application Name",
 
 def print_help():
     """Prints command line options and exits"""
-    print("""bulk-update-applications.py -f <excel_file_with_application_definitions> -r <header_row> [-d]"
+    print("""bulk-update-applications.py -f <excel_file_with_application_definitions> [-r <header_row>] [-d]"
         Reads all lines in <excel_file_with_application_definitions>, for each line, it will update the profile
-        <header_row> defines which row contains your table headers, which will be read to determine where each field goes.
+        <header_row> defines which row contains your table headers, which will be read to determine where each field goes (default 2).
 """)
     sys.exit()
 
@@ -406,7 +406,11 @@ def main(argv):
                 header_row=int(arg)
 
         api_base = get_api_base()
-        if file_name and header_row> 0:
+
+        if header_row < 0:
+            print("INFO: No header row set, using default of 2")
+            header_row = 2
+        if file_name > 0:
             update_all_applications(api_base, file_name, header_row, verbose)
         else:
             print_help()
