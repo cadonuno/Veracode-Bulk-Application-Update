@@ -316,14 +316,14 @@ def update_application(api_base, excel_headers, excel_sheet, row, verbose):
         if body:
             print(body)
     if response.status_code == 200:
-        print(f"Successfully created updated profile {application_name}.")
+        print(f"Successfully updated profile {application_name}.")
         return "success"
     else:
         body = response.json()
         if (body):
-            return f"Unable to create application profile: {response.status_code} - {body}"
+            return f"Unable to update application profile: {response.status_code} - {body}"
         else:
-            return f"Unable to create application profile: {response.status_code}"
+            return f"Unable to update application profile: {response.status_code}"
     
 
 def setup_excel_headers(excel_sheet, header_row, verbose):
