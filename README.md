@@ -26,7 +26,6 @@ appropriate file protections in place.
     veracode_api_key_id = <YOUR_API_KEY_ID>
     veracode_api_key_secret = <YOUR_API_KEY_SECRET>
 
-
 ### Preparing the Excel Template
     The Excel template present in the repository can be used to prepare the metadata.
 
@@ -39,9 +38,10 @@ appropriate file protections in place.
         <header_row> defines which row contains your table headers, which will be read to determine where each field goes (default 2).
 
 If a credentials file is not created, you can export the following environment variables:
+
     export VERACODE_API_KEY_ID=<YOUR_API_KEY_ID>
     export VERACODE_API_KEY_SECRET=<YOUR_API_KEY_SECRET>
-    python  bulk-create-applications.py -f <excel_file_with_application_definitions> -r <header_row> [-d]
+    python bulk-create-applications.py -f <excel_file_with_application_definitions> -r <header_row> [-d]
 
 ## License
 
