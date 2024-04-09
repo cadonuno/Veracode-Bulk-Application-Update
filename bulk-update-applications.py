@@ -50,7 +50,7 @@ non_custom_field_headers={"Application Name",
 def print_help():
     """Prints command line options and exits"""
     print("""bulk-update-applications.py -f <excel_file_with_application_definitions> -r <header_row> [-d]"
-        Reads all lines in <excel_file_with_application_definitions>, for each line, it will create update the profile
+        Reads all lines in <excel_file_with_application_definitions>, for each line, it will update the profile
         <header_row> defines which row contains your table headers, which will be read to determine where each field goes.
 """)
     sys.exit()
@@ -146,7 +146,7 @@ def get_business_unit(api_base, excel_headers, excel_sheet, row, verbose):
     if not business_unit_name:
         return ""
     elif business_unit_name == NULL:
-        return '''"business_unit": {}'''
+        return '''"business_unit": null'''
     else:
         return f'''
     "business_unit": {{
@@ -253,7 +253,7 @@ def get_tags(excel_headers, excel_sheet, row):
 def get_business_criticality(excel_headers, excel_sheet, row):
     return get_field_for_json(get_field_value(excel_headers, excel_sheet, row, "Business Criticality").replace(" ", "_").upper(), "business_criticality")
 
-def get_inner_profile_info(api_base, excel_headers, excel_sheet, row, verbose):
+def get_inner_profile_info(api_base, application_name, excel_headers, excel_sheet, row, verbose):
     inner_profile_info = ""
     business_criticality_json = get_business_criticality(excel_headers, excel_sheet, row)
     archer_application_name_json = get_archer_application_name(excel_headers, excel_sheet, row)
@@ -266,26 +266,27 @@ def get_inner_profile_info(api_base, excel_headers, excel_sheet, row, verbose):
     application_settings_json = get_application_settings(excel_headers, excel_sheet, row)
     custom_fields_json=get_custom_fields(excel_headers, excel_sheet, row)
 
+    inner_profile_info = f'''"name": "{application_name}"'''
     if business_criticality_json:
-        inner_profile_info = business_criticality_json
+        inner_profile_info = inner_profile_info + ", " + business_criticality_json
     if archer_application_name_json:
-        inner_profile_info = inner_profile_info + ", " + archer_application_name_json if inner_profile_info else archer_application_name_json
+        inner_profile_info = inner_profile_info + ", " + archer_application_name_json
     if business_owners_json:
-        inner_profile_info = inner_profile_info + ", " + business_owners_json if inner_profile_info else business_owners_json
+        inner_profile_info = inner_profile_info + ", " + business_owners_json
     if business_unit_json:
-        inner_profile_info = inner_profile_info + ", " + business_unit_json if inner_profile_info else business_unit_json
+        inner_profile_info = inner_profile_info + ", " + business_unit_json
     if description_json:
-        inner_profile_info = inner_profile_info + ", " + description_json if inner_profile_info else description_json
+        inner_profile_info = inner_profile_info + ", " + description_json
     if policy_json:
-        inner_profile_info = inner_profile_info + ", " + policy_json if inner_profile_info else policy_json
+        inner_profile_info = inner_profile_info + ", " + policy_json
     if tags_json:
-        inner_profile_info = inner_profile_info + ", " + tags_json if inner_profile_info else tags_json
+        inner_profile_info = inner_profile_info + ", " + tags_json
     if teams_json:
-        inner_profile_info = inner_profile_info + ", " + teams_json if inner_profile_info else teams_json
+        inner_profile_info = inner_profile_info + ", " + teams_json
     if application_settings_json:
-        inner_profile_info = inner_profile_info + ", " + application_settings_json if inner_profile_info else application_settings_json
+        inner_profile_info = inner_profile_info + ", " + application_settings_json
     if custom_fields_json:
-        inner_profile_info = inner_profile_info + ", " + custom_fields_json if inner_profile_info else custom_fields_json
+        inner_profile_info = inner_profile_info + ", " + custom_fields_json
 
     return inner_profile_info
 
@@ -300,7 +301,7 @@ def update_application(api_base, excel_headers, excel_sheet, row, verbose):
     path = f"{api_base}appsec/v1/applications/{application_guid}?method=partial"
     request_content=f'''{{
         "profile": {{
-            {get_inner_profile_info(api_base, excel_headers, excel_sheet, row, verbose)}
+            {get_inner_profile_info(api_base, application_name, excel_headers, excel_sheet, row, verbose)}
         }}
     }}'''
     
