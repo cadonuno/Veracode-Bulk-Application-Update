@@ -34,9 +34,9 @@ appropriate file protections in place.
     A new column will be added to the right containing the status of each line. Successfully updated rows will be set to 'success' and will be skipped on future runs.
     
 ### Running the script
-    py bulk-create-applications.py -f <excel_file_with_application_definitions> -r <header_row> [-d]"
-        Reads all lines in <excel_file_with_application_definitions>, for each line, it will create a new application profile.
-        <header_row> defines which row contains your table headers, which will be read to determine where each field goes.
+    py bulk-update-applications.py -f <excel_file_with_application_definitions> [-r <header_row>] [-d]"
+        Reads all lines in <excel_file_with_application_definitions>, for each line, it will update the profile
+        <header_row> defines which row contains your table headers, which will be read to determine where each field goes (default 2).
 
 If a credentials file is not created, you can export the following environment variables:
     export VERACODE_API_KEY_ID=<YOUR_API_KEY_ID>
