@@ -1,8 +1,8 @@
-# Veracode Bulk Application Creator
+# Veracode Bulk Application Update
 
 ## Overview
 
-This script allows for bulk importing application profiles into the Veracode platform
+This script allows for bulk updating application profiles in the Veracode platform
 
 ## Installation
 
