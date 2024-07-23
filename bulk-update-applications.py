@@ -36,6 +36,7 @@ sleep_time = 10
 
 last_column = 0
 non_custom_field_headers={"Application Name",
+                          "New Application Name",
                             "Business Criticality",
                             "Policy",
                             "Description",
@@ -108,10 +109,12 @@ def get_field_for_json(field_value, field_name):
         field_value = ""
     return f'"{field_name}": "{field_value}"'
 
-def get_item_from_api_call(api_base, api_to_call, item_to_find, list_name, list_name2, field_to_check, field_to_get, is_exact_match, verbose):
+
+def get_api_results(api_base, api_to_call, error_message, verbose):
     global failed_attempts
     global sleep_time
     global max_attempts_per_request
+
     path = f"{api_base}{api_to_call}"
     if verbose:
         print(f"Calling: {path}")
@@ -120,6 +123,24 @@ def get_item_from_api_call(api_base, api_to_call, item_to_find, list_name, list_
     data = response.json()
 
     if response.status_code == 200:
+        return data, None
+    else:
+        print(f"ERROR: code: {response.status_code}")
+        print(f"ERROR: value: {data}")
+        failed_attempts+=1
+        if (failed_attempts < max_attempts_per_request):
+            time.sleep(sleep_time)
+            return get_api_results(api_base, api_to_call, verbose)
+        else:
+            print(error_message)
+            return None, error_message
+
+def get_item_from_api_call(api_base, api_to_call, item_to_find, list_name, list_name2, field_to_check, field_to_get, is_exact_match, verbose):
+    data, error_message = get_api_results(api_base, api_to_call, f"ERROR: trying to get {list_name}+{list_name2} named {item_to_find}", verbose)
+    if error_message:
+        print(error_message)
+        return error_message
+    else:
         if verbose:
             print(data)
         if "_embedded" in data and len(data["_embedded"][list_name]) > 0:
@@ -130,16 +151,7 @@ def get_item_from_api_call(api_base, api_to_call, item_to_find, list_name, list_
         else:
             print(f"ERROR: No {list_name}+{list_name2} named '{item_to_find}' found")
             return f"ERROR: No {list_name}+{list_name2} named '{item_to_find}' found"
-    else:
-        print(f"ERROR: trying to get {list_name}+{list_name2} named {item_to_find}")
-        print(f"ERROR: code: {response.status_code}")
-        print(f"ERROR: value: {data}")
-        failed_attempts+=1
-        if (failed_attempts < max_attempts_per_request):
-            time.sleep(sleep_time)
-            return get_item_from_api_call(api_base, api_to_call, item_to_find, list_name, list_name2, field_to_check, field_to_get, verbose)
-        else:
-            return f"ERROR: trying to get {list_name}+{list_name2} named {item_to_find}"
+        
 
 def get_business_unit(api_base, excel_headers, excel_sheet, row, verbose):
     business_unit_name = get_field_value(excel_headers, excel_sheet, row, "Business Unit")
@@ -253,9 +265,25 @@ def get_tags(excel_headers, excel_sheet, row):
 def get_business_criticality(excel_headers, excel_sheet, row):
     return get_field_for_json(get_field_value(excel_headers, excel_sheet, row, "Business Criticality").replace(" ", "_").upper(), "business_criticality")
 
-def get_inner_profile_info(api_base, application_name, excel_headers, excel_sheet, row, verbose):
+def fetch_field_from_json_string(json_error_pair, field_list):
+    if not json_error_pair or json_error_pair[1]:
+        return None
+    current_field = json_error_pair[0]
+    for field in field_list:
+        if field in field_list:
+            current_field = current_field[field]
+        else:
+            print(f"Unable to fetch field list {field_list} in json_object {json_error_pair[0]}")
+            return None
+    return current_field
+
+def get_inner_profile_info(api_base, application_guid, new_name, excel_headers, excel_sheet, row, verbose):
     inner_profile_info = ""
     business_criticality_json = get_business_criticality(excel_headers, excel_sheet, row)
+    if not business_criticality_json:
+        business_criticality_json = get_field_for_json(fetch_field_from_json_string(
+            get_api_results(api_base, "appsec/v1/applications/" + application_guid, "ERROR: trying to get current business criticality for application", verbose), ["profile","business_criticality"]), 
+            "business_criticality")
     archer_application_name_json = get_archer_application_name(excel_headers, excel_sheet, row)
     business_owners_json = get_business_owners(excel_headers, excel_sheet, row)
     business_unit_json = get_business_unit(api_base, excel_headers, excel_sheet, row, verbose)
@@ -266,7 +294,7 @@ def get_inner_profile_info(api_base, application_name, excel_headers, excel_shee
     application_settings_json = get_application_settings(excel_headers, excel_sheet, row)
     custom_fields_json=get_custom_fields(excel_headers, excel_sheet, row)
 
-    inner_profile_info = f'''"name": "{application_name}"'''
+    inner_profile_info = f'''"name": "{new_name}"'''
     if business_criticality_json:
         inner_profile_info = inner_profile_info + ", " + business_criticality_json
     if archer_application_name_json:
@@ -292,6 +320,10 @@ def get_inner_profile_info(api_base, application_name, excel_headers, excel_shee
 
 def update_application(api_base, excel_headers, excel_sheet, row, verbose):
     application_name = get_field_value(excel_headers, excel_sheet, row, "Application Name")
+    new_name = get_field_value(excel_headers, excel_sheet, row, "New Application Name")
+    if not new_name:
+        new_name = application_name
+
     application_guid = get_application_guid(api_base, application_name, verbose)
     if not application_guid:
         error_message = f"Application not found: {application_name}"
@@ -301,7 +333,7 @@ def update_application(api_base, excel_headers, excel_sheet, row, verbose):
     path = f"{api_base}appsec/v1/applications/{application_guid}?method=partial"
     request_content=f'''{{
         "profile": {{
-            {get_inner_profile_info(api_base, application_name, excel_headers, excel_sheet, row, verbose)}
+            {get_inner_profile_info(api_base, application_guid, new_name, excel_headers, excel_sheet, row, verbose)}
         }}
     }}'''
     
@@ -309,7 +341,7 @@ def update_application(api_base, excel_headers, excel_sheet, row, verbose):
         print(f"Calling API at: {path}")
         print(request_content)
 
-    response = requests.patch(path, auth=RequestsAuthPluginVeracodeHMAC(), headers=json_headers, json=json.loads(request_content))
+    response = requests.put(path, auth=RequestsAuthPluginVeracodeHMAC(), headers=json_headers, json=json.loads(request_content))
 
     if verbose:
         print(f"status code {response.status_code}")
@@ -318,6 +350,8 @@ def update_application(api_base, excel_headers, excel_sheet, row, verbose):
             print(body)
     if response.status_code == 200:
         print(f"Successfully updated profile {application_name}.")
+        if new_name != application_name:
+            print(f"    - Application name was set to {new_name}")
         return "success"
     else:
         body = response.json()
@@ -407,13 +441,13 @@ def main(argv):
 
         api_base = get_api_base()
 
+        if not file_name:
+            print_help()
         if header_row < 0:
             print("INFO: No header row set, using default of 2")
             header_row = 2
-        if file_name > 0:
-            update_all_applications(api_base, file_name, header_row, verbose)
-        else:
-            print_help()
+        
+        update_all_applications(api_base, file_name, header_row, verbose)
     except requests.RequestException as e:
         print("An error occurred!")
         print(e)
