@@ -130,7 +130,7 @@ def get_api_results(api_base, api_to_call, error_message, verbose):
         failed_attempts+=1
         if (failed_attempts < max_attempts_per_request):
             time.sleep(sleep_time)
-            return get_api_results(api_base, api_to_call, verbose)
+            return get_api_results(api_base, api_to_call, error_message, verbose)
         else:
             print(error_message)
             return None, error_message
