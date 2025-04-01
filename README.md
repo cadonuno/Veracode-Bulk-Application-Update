@@ -8,7 +8,7 @@ This script allows for bulk updating application profiles in the Veracode platfo
 
 Clone this repository:
 
-    git clone https://github.com/cadonuno/Veracode-Bulk-Application-Creator.git
+    git clone https://github.com/cadonuno/Veracode-Bulk-Application-Update.git
 
 Install dependencies:
 
