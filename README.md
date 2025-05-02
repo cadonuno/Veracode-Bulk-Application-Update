@@ -41,7 +41,7 @@ If a credentials file is not created, you can export the following environment v
 
     export VERACODE_API_KEY_ID=<YOUR_API_KEY_ID>
     export VERACODE_API_KEY_SECRET=<YOUR_API_KEY_SECRET>
-    python bulk-create-applications.py -f <excel_file_with_application_definitions> -r <header_row> [-d]
+    python bulk-update-applications.py -f <excel_file_with_application_definitions> -r <header_row> [-d]
 
 ## License
 
