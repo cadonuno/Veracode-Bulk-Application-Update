@@ -1,12 +1,12 @@
 import sys
+import os
 import requests
 import getopt
-import json
 import urllib.parse
-from veracode_api_signing.plugin_requests import RequestsAuthPluginVeracodeHMAC
 import openpyxl
-import time
-import xml.etree.ElementTree as ET  # for parsing XML
+from veracode_api_py.applications import Applications
+from veracode_api_py.identity import BusinessUnits, Teams
+from veracode_api_py.policy import Policies
 
 from veracode_api_signing.credentials import get_credentials
 
@@ -25,11 +25,6 @@ json_headers = {
     "Content-Type": "application/json"
 }
 
-xml_headers = {
-    "User-Agent": "Bulk application creation - python script",
-    "Content-Type": "application/xml"
-}
-
 failed_attempts = 0
 max_attempts_per_request = 10
 sleep_time = 10
@@ -44,9 +39,7 @@ non_custom_field_headers={"Application Name",
                             "Business Unit",
                             "Business Owner",
                             "Owner Email",
-                            "Teams",
-                            "Dynamic Scan Approval",
-                            "Archer Application Name"}
+                            "Teams"}
 
 def print_help():
     """Prints command line options and exits"""
@@ -55,25 +48,6 @@ def print_help():
         <header_row> defines which row contains your table headers, which will be read to determine where each field goes (default 2).
 """)
     sys.exit()
-
-def request_encode(value_to_encode):
-    return urllib.parse.quote(value_to_encode, safe='')
-
-def find_exact_match(list, to_find, field_name, list_name2):
-    if list_name2:
-        for index in range(len(list)):
-            if (list_name2 and list[index][list_name2][field_name].lower() == to_find.lower()):
-                return list[index]
-    
-        print(f"Unable to find a member of list with {field_name}+{list_name2} equal to {to_find}")
-        raise NoExactMatchFoundException(f"Unable to find a member of list with {field_name}+{list_name2} equal to {to_find}")
-    else:
-        for index in range(len(list)):
-            if list[index][field_name].lower() == to_find.lower():
-                return list[index]
-
-        print(f"Unable to find a member of list with {field_name} equal to {to_find}")
-        raise NoExactMatchFoundException(f"Unable to find a member of list with {field_name} equal to {to_find}")
 
 def get_field_value(excel_headers, excel_sheet, row, field_header):
     field_to_get = field_header.strip()
@@ -87,279 +61,175 @@ def get_business_owners(excel_headers, excel_sheet, row):
     name=get_field_value(excel_headers, excel_sheet, row, "Business Owner")
     email=get_field_value(excel_headers, excel_sheet, row, "Owner Email")
     if not name or not email:
-        return ""
-    elif name == NULL or email == NULL:
-        return '''
-            "business_owners": [
-                {}
-            ]'''
-    else:
-        return f'''
-            "business_owners": [
-                {{
-                    "email": "{email}",
-                    "name": "{name}"
-                }}
-            ]'''
-
-def get_field_for_json(field_value, field_name):
-    if not field_value:
         return None
-    if field_value == NULL:
-        field_value = ""
-    return f'"{field_name}": "{field_value}"'
-
-
-def get_api_results(api_base, api_to_call, error_message, verbose):
-    global failed_attempts
-    global sleep_time
-    global max_attempts_per_request
-
-    path = f"{api_base}{api_to_call}"
-    if verbose:
-        print(f"Calling: {path}")
-
-    response = requests.get(path, auth=RequestsAuthPluginVeracodeHMAC(), headers=json_headers)
-    data = response.json()
-
-    if response.status_code == 200:
-        return data, None
+    elif name == NULL or email == NULL:
+        return ""
     else:
-        print(f"ERROR: code: {response.status_code}")
-        print(f"ERROR: value: {data}")
-        failed_attempts+=1
-        if (failed_attempts < max_attempts_per_request):
-            time.sleep(sleep_time)
-            return get_api_results(api_base, api_to_call, error_message, verbose)
-        else:
-            print(error_message)
-            return None, error_message
+        return { "email": email, "name": name}
 
-def get_item_from_api_call(api_base, api_to_call, item_to_find, list_name, list_name2, field_to_check, field_to_get, is_exact_match, verbose):
-    data, error_message = get_api_results(api_base, api_to_call, f"ERROR: trying to get {list_name}+{list_name2} named {item_to_find}", verbose)
-    if error_message:
-        print(error_message)
-        return error_message
-    else:
-        if verbose:
-            print(data)
-        if "_embedded" in data and len(data["_embedded"][list_name]) > 0:
-            if list_name2:
-                return (find_exact_match(data["_embedded"][list_name], item_to_find, field_to_check, list_name2) if is_exact_match else data["_embedded"][list_name][list_name2][0])[field_to_get]
-            else:
-                return (find_exact_match(data["_embedded"][list_name], item_to_find, field_to_check, list_name2) if is_exact_match else data["_embedded"][list_name][0])[field_to_get]
-        else:
-            print(f"ERROR: No {list_name}+{list_name2} named '{item_to_find}' found")
-            return f"ERROR: No {list_name}+{list_name2} named '{item_to_find}' found"
-        
+def get_business_unit_guid(business_unit_name: str):
+    matches = BusinessUnits().get_all()
+    if not matches or len(matches) == 0:
+        return None
+    for match in matches:
+        if match["bu_name"].strip() == business_unit_name.strip():
+            return match["bu_id"]
+    return None
 
-def get_business_unit(api_base, excel_headers, excel_sheet, row, verbose):
+def get_business_unit(excel_headers, excel_sheet, row):
     business_unit_name = get_field_value(excel_headers, excel_sheet, row, "Business Unit")
     if not business_unit_name:
-        return ""
+        return None
     elif business_unit_name == NULL:
-        return '''"business_unit": null'''
+        return ""
     else:
-        return f'''
-    "business_unit": {{
-      "guid": "{get_item_from_api_call(api_base, "api/authn/v2/business_units?bu_name="+ request_encode(business_unit_name), business_unit_name, "business_units", None, "bu_name", "bu_id", True, verbose)}"
-    }}'''
+        bu_guid = get_business_unit_guid(business_unit_name)
+        if not bu_guid:
+            raise NoExactMatchFoundException(f"Unable to find a Business Unit named {business_unit_name}")
+        return bu_guid
 
-def get_policy(api_base, excel_headers, excel_sheet, row, verbose):
+def get_policy_guid(policy_name: str):
+    matches = Policies().get_all()
+    if not matches or len(matches) == 0:
+        return None
+    for match in matches:
+        if match["name"].strip() == policy_name.strip():
+            return match["guid"]
+    return None
+
+def get_policy(excel_headers, excel_sheet, row):
     policy_name = get_field_value(excel_headers, excel_sheet, row, "Policy")
     if not policy_name:
-        return ""
-    elif policy_name == NULL:
-        return '"policies": []'
+        return None
     else:
-        return f'''
-    "policies": [{{
-      "guid": "{get_item_from_api_call(api_base, "appsec/v1/policies?category=APPLICATION&name_exact=true&public_policy=true&name="+ request_encode(policy_name), policy_name, "policy_versions", None, "name", "guid", False, verbose)}"
-    }}]'''
+        policy_guid = get_policy_guid(policy_name)
+        if not policy_guid:
+            raise NoExactMatchFoundException(f"Unable to find a Policy named {policy_name}")
+        return policy_guid
 
-def get_team_value(api_base, team_name, verbose):
-    team_guid = get_item_from_api_call(api_base, "api/authn/v2/teams?all_for_org=true&team_name="+ request_encode(team_name), team_name, "teams", None, "team_name", "team_id", True, verbose)
-    if team_guid:
-        return f'''{{
-        "guid": "{team_guid}"
-      }}'''
-    else:
-        return ""
+def inner_get_team_guid(team_name: str):
+    matches = Teams().get_all()
+    if not matches or len(matches) == 0:
+        return None
+    for match in matches:
+        if match["team_name"].strip() == team_name.strip():
+            return match["team_id"]
+    return None
 
-def get_teams(api_base, excel_headers, excel_sheet, row, verbose):
+def get_team_guid(team_name):
+    team_guid = inner_get_team_guid(team_name)
+    if not team_guid:
+        raise NoExactMatchFoundException(f"Unable to find a Team named {team_name}")
+    return team_guid
+
+def get_teams(excel_headers, excel_sheet, row):
     all_teams_base = get_field_value(excel_headers, excel_sheet, row, "Teams")
     if not all_teams_base:
-        return ""
-    if all_teams_base == NULL:
-        return f'''
-            "teams": []'''
+        return []
     all_teams = all_teams_base.split(",")
-    inner_team_list = ""
+    inner_team_list = []
     for team_name in all_teams:
-        team_value = get_team_value(api_base, team_name.strip(), verbose)
-        if team_name: 
-            inner_team_list = inner_team_list + (""",
-            """ if inner_team_list else "") + team_value
-    if inner_team_list:
-        return f'''
-            "teams": [
-                {inner_team_list}
-            ]'''
-    else:
-        return ""
-        
-def get_application_settings(excel_headers, excel_sheet, row):
-    base_value = get_field_value(excel_headers, excel_sheet, row, "Dynamic Scan Approval")
-    value = False
-    if base_value:
-        value = str(base_value).strip().lower() == "false"
-    inner_field = get_field_for_json(str(value).lower(), "dynamic_scan_approval_not_required")
-    return f'''
-    "settings": {{
-      {inner_field}
-    }}''' if inner_field else None
+        inner_team_list.append(get_team_guid(team_name.strip()))
+    return inner_team_list
 
-def get_custom_fields(excel_headers, excel_sheet, row):
+def parse_custom_field_list(original_list, new_list):
+    new_list = list(map(lambda custom_field: parse_custom_field(custom_field), new_list))
+    all_names = list(map(lambda custom_field: custom_field["name"], new_list))
+    for field in original_list:
+        if not field["name"] in all_names:
+            new_list.append(field)
+    return new_list
+
+def parse_new_custom_fields(excel_headers, excel_sheet, row):
     global non_custom_field_headers
-    inner_custom_fields_list = ""
+    inner_custom_fields_list = []
     for field in excel_headers:
         if not field in non_custom_field_headers:
             value = excel_sheet.cell(row = row, column=excel_headers[field]).value
             if value:
-                found_field = f'''{{
-                    "name": "{field}",
-                    {get_field_for_json(value, "value")}
-                }}'''
-                inner_custom_fields_list = inner_custom_fields_list + (""",
-                """ if inner_custom_fields_list else "") + found_field
+                inner_custom_fields_list.append({
+                    "name": field,
+                    "value": value
+                })
     if inner_custom_fields_list:
-        return f'''
-                "custom_fields": [
-                    {inner_custom_fields_list}
-                ]'''
+        return inner_custom_fields_list
     else:
-        return ""
-        
-def get_archer_application_name(excel_headers, excel_sheet, row):
-    return get_field_for_json(get_field_value(excel_headers, excel_sheet, row, "Archer Application Name"), "archer_app_name")
-
-def url_encode_with_plus(a_string):
-    return urllib.parse.quote_plus(a_string, safe='').replace("&", "%26")
-
-def get_error_node_value(body):
-    inner_node = ET.XML(body)
-    if inner_node.tag == "error" and not inner_node == None:
-        return inner_node.text
-    else:
-        return ""
-
-def get_application_guid(api_base, application_name, verbose):
-    return get_item_from_api_call(api_base, "appsec/v1/applications?name="+ request_encode(application_name.strip()), application_name.strip(), "applications", "profile", "name", "guid", True, verbose)
+        return []
+    
+def parse_custom_field(custom_field):
+    return {
+        "name": custom_field["name"],
+        "value": custom_field["value"]
+    }
 
 def get_description(excel_headers, excel_sheet, row):
-    return get_field_for_json(get_field_value(excel_headers, excel_sheet, row, "Description"), "description")
+    description = get_field_value(excel_headers, excel_sheet, row, "Description")
+    if description == NULL:
+        return ""
+    if not description:
+        return None
+    return description        
 
 def get_tags(excel_headers, excel_sheet, row):
-    return get_field_for_json(get_field_value(excel_headers, excel_sheet, row, "Tags"), "tags")
+    tags = get_field_value(excel_headers, excel_sheet, row, "Tags")
+    if tags == NULL:
+        return ""
+    if not tags:
+        return None
+    return tags
 
 def get_business_criticality(excel_headers, excel_sheet, row):
-    return get_field_for_json(get_field_value(excel_headers, excel_sheet, row, "Business Criticality").replace(" ", "_").upper(), "business_criticality")
-
-def fetch_field_from_json_string(json_error_pair, field_list):
-    if not json_error_pair or json_error_pair[1]:
+    business_criticality = get_field_value(excel_headers, excel_sheet, row, "Business Criticality").replace(" ", "_").upper()
+    if business_criticality == NULL:
+        return ""
+    if not business_criticality:
         return None
-    current_field = json_error_pair[0]
-    for field in field_list:
-        if field in field_list:
-            current_field = current_field[field]
-        else:
-            print(f"Unable to fetch field list {field_list} in json_object {json_error_pair[0]}")
-            return None
-    return current_field
+    return business_criticality
 
-def get_inner_profile_info(api_base, application_guid, new_name, excel_headers, excel_sheet, row, verbose):
-    inner_profile_info = ""
-    business_criticality_json = get_business_criticality(excel_headers, excel_sheet, row)
-    if not business_criticality_json:
-        business_criticality_json = get_field_for_json(fetch_field_from_json_string(
-            get_api_results(api_base, "appsec/v1/applications/" + application_guid, "ERROR: trying to get current business criticality for application", verbose), ["profile","business_criticality"]), 
-            "business_criticality")
-    archer_application_name_json = get_archer_application_name(excel_headers, excel_sheet, row)
-    business_owners_json = get_business_owners(excel_headers, excel_sheet, row)
-    business_unit_json = get_business_unit(api_base, excel_headers, excel_sheet, row, verbose)
-    description_json = get_description(excel_headers, excel_sheet, row)
-    policy_json = get_policy(api_base, excel_headers, excel_sheet, row, verbose)
-    tags_json = get_tags(excel_headers, excel_sheet, row)
-    teams_json = get_teams(api_base, excel_headers, excel_sheet, row, verbose)
-    application_settings_json = get_application_settings(excel_headers, excel_sheet, row)
-    custom_fields_json=get_custom_fields(excel_headers, excel_sheet, row)
+def try_update_application(application, new_name, excel_headers, excel_sheet, row):
+    business_criticality_new = get_business_criticality(excel_headers, excel_sheet, row)
+    if not business_criticality_new:
+        business_criticality_new = application["profile"]["business_criticality"]
+    business_owner_new = get_business_owners(excel_headers, excel_sheet, row)
+    business_unit_new = get_business_unit(excel_headers, excel_sheet, row)
+    description_new = get_description(excel_headers, excel_sheet, row)
+    policy_new= get_policy(excel_headers, excel_sheet, row)
+    tags_new = get_tags(excel_headers, excel_sheet, row)
+    teams_new = get_teams(excel_headers, excel_sheet, row)
 
-    inner_profile_info = f'''"name": "{new_name}"'''
-    if business_criticality_json:
-        inner_profile_info = inner_profile_info + ", " + business_criticality_json
-    if archer_application_name_json:
-        inner_profile_info = inner_profile_info + ", " + archer_application_name_json
-    if business_owners_json:
-        inner_profile_info = inner_profile_info + ", " + business_owners_json
-    if business_unit_json:
-        inner_profile_info = inner_profile_info + ", " + business_unit_json
-    if description_json:
-        inner_profile_info = inner_profile_info + ", " + description_json
-    if policy_json:
-        inner_profile_info = inner_profile_info + ", " + policy_json
-    if tags_json:
-        inner_profile_info = inner_profile_info + ", " + tags_json
-    if teams_json:
-        inner_profile_info = inner_profile_info + ", " + teams_json
-    if application_settings_json:
-        inner_profile_info = inner_profile_info + ", " + application_settings_json
-    if custom_fields_json:
-        inner_profile_info = inner_profile_info + ", " + custom_fields_json
+    new_custom_fields = parse_new_custom_fields(excel_headers, excel_sheet, row)
+    if new_custom_fields:
+        current_custom_fields = list(map(lambda custom_field: custom_field, application["profile"]["custom_fields"])) if application["profile"]["custom_fields"] else []
+        custom_fields_new=parse_custom_field_list(current_custom_fields, new_custom_fields)
+    else:
+        custom_fields_new = None
+    
+    Applications().update(application["guid"], new_name, business_criticality_new, description_new, business_unit_new, teams_new, policy_new, custom_fields_new, 
+                            business_owner_new['name'] if business_owner_new else None, business_owner_new['email'] if business_owner_new else None, tags=tags_new)
+    return "success"
 
-    return inner_profile_info
+def get_application(application_name: str):
+    matches = Applications().get_by_name(application_name)
+    if not matches or len(matches) == 0:
+        return None
+    for match in matches:
+        if match["profile"]["name"] == application_name.strip():
+            return match
+    return None
 
-def update_application(api_base, excel_headers, excel_sheet, row, verbose):
+def update_application(excel_headers, excel_sheet, row):
     application_name = get_field_value(excel_headers, excel_sheet, row, "Application Name")
     new_name = get_field_value(excel_headers, excel_sheet, row, "New Application Name")
     if not new_name:
         new_name = application_name
 
-    application_guid = get_application_guid(api_base, application_name, verbose)
-    if not application_guid:
+    application = get_application(application_name)
+    if not application:
         error_message = f"Application not found: {application_name}"
         print (error_message)
         return error_message
     
-    path = f"{api_base}appsec/v1/applications/{application_guid}?method=partial"
-    request_content=f'''{{
-        "profile": {{
-            {get_inner_profile_info(api_base, application_guid, new_name, excel_headers, excel_sheet, row, verbose)}
-        }}
-    }}'''
-    
-    if verbose:
-        print(f"Calling API at: {path}")
-        print(request_content)
-
-    response = requests.put(path, auth=RequestsAuthPluginVeracodeHMAC(), headers=json_headers, json=json.loads(request_content))
-
-    if verbose:
-        print(f"status code {response.status_code}")
-        body = response.json()
-        if body:
-            print(body)
-    if response.status_code == 200:
-        print(f"Successfully updated profile {application_name}.")
-        if new_name != application_name:
-            print(f"    - Application name was set to {new_name}")
-        return "success"
-    else:
-        body = response.json()
-        if (body):
-            return f"Unable to update application profile: {response.status_code} - {body}"
-        else:
-            return f"Unable to update application profile: {response.status_code}"
-    
+    return try_update_application(application, new_name, excel_headers, excel_sheet, row)
 
 def setup_excel_headers(excel_sheet, header_row, verbose):
     excel_headers = {}
@@ -377,7 +247,7 @@ def setup_excel_headers(excel_sheet, header_row, verbose):
         last_column += 1
     return excel_headers
 
-def update_all_applications(api_base, file_name, header_row, verbose):
+def update_all_applications(file_name, header_row, verbose):
     global failed_attempts
     excel_file = openpyxl.load_workbook(file_name)
     excel_sheet = excel_file.active
@@ -401,28 +271,28 @@ def update_all_applications(api_base, file_name, header_row, verbose):
             else:
                 try:
                     print(f"Importing row {row-header_row}/{excel_sheet.max_row-header_row}:")
-                    status = update_application(api_base, excel_headers, excel_sheet, row, verbose)
+                    status = update_application(excel_headers, excel_sheet, row)
                     print(f"Finished importing row {row-header_row}/{excel_sheet.max_row-header_row}")
                     print("---------------------------------------------------------------------------")
                 except NoExactMatchFoundException:
                     status= NoExactMatchFoundException.get_message()
+                except Exception as e:
+                    status = repr(e)
                 excel_sheet.cell(row = row, column = max_column+1).value=status
     finally:
         excel_file.save(filename=file_name)
-
-def get_api_base():
-    api_key_id, api_key_secret = get_credentials()
-    api_base = "https://api.veracode.{instance}/"
-    if api_key_id.startswith("vera01"):
-        return api_base.replace("{instance}", "eu", 1)
-    else:
-        return api_base.replace("{instance}", "com", 1)
 
 def main(argv):
     """Allows for bulk updating application profiles"""
     global failed_attempts
     global last_column
     excel_file = None
+
+    old_lower_veracode_api_key_id = os.environ.get('veracode_api_key_id', "")
+    old_lower_veracode_api_key_secret = os.environ.get('veracode_api_key_secret', "")
+    old_upper_veracode_api_key_id = os.environ.get('VERACODE_API_KEY_ID', "")
+    old_upper_veracode_api_key_secret = os.environ.get('VERACODE_API_KEY_SECRET', "")
+
     try:
         verbose = False
         file_name = ''
@@ -439,20 +309,22 @@ def main(argv):
             if opt in ('-r', '--header_row'):
                 header_row=int(arg)
 
-        api_base = get_api_base()
-
         if not file_name:
             print_help()
         if header_row < 0:
             print("INFO: No header row set, using default of 2")
             header_row = 2
         
-        update_all_applications(api_base, file_name, header_row, verbose)
+        update_all_applications(file_name, header_row, verbose)
     except requests.RequestException as e:
         print("An error occurred!")
         print(e)
         sys.exit(1)
     finally:
+        os.environ['veracode_api_key_id'] = old_lower_veracode_api_key_id
+        os.environ['VERACODE_API_KEY_ID'] = old_upper_veracode_api_key_id
+        os.environ['veracode_api_key_secret'] = old_lower_veracode_api_key_secret
+        os.environ['VERACODE_API_KEY_SECRET'] = old_upper_veracode_api_key_secret
         if excel_file:
             excel_file.save(filename=file_name)
 
