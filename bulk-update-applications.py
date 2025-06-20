@@ -245,8 +245,12 @@ def try_update_application(application, new_name, excel_headers, excel_sheet, ro
     else:
         custom_fields_new = None
     
-    Applications().update(application["guid"], new_name, business_criticality_new, description_new, business_unit_new, teams_new, policy_new, custom_fields_new, 
-                            business_owner_new['name'] if business_owner_new else None, business_owner_new['email'] if business_owner_new else None, tags=tags_new)
+    git_repo_url = application["profile"]["git_repo_url"] if "git_repo_url" in application["profile"] else None
+    custom_kms_alias= application["profile"]["custom_kms_alias"] if "custom_kms_alias" in application["profile"] else None
+
+    Applications().update(guid=application["guid"], app_name=new_name, business_criticality=business_criticality_new, description=description_new, business_unit=business_unit_new, 
+                          teams=teams_new, policy_guid=policy_new, custom_fields=custom_fields_new, bus_owner_name=business_owner_new['name'] if business_owner_new else None, bus_owner_email=business_owner_new['email'] if business_owner_new else None, 
+                          tags=tags_new, custom_kms_alias=custom_kms_alias, git_repo_url=git_repo_url)
     return "success"
 
 def get_application(application_name: str):
