@@ -180,11 +180,43 @@ def get_tags(excel_headers, excel_sheet, row):
 
 def get_business_criticality(excel_headers, excel_sheet, row):
     business_criticality = get_field_value(excel_headers, excel_sheet, row, "Business Criticality").replace(" ", "_").upper()
-    if business_criticality == NULL:
-        return ""
     if not business_criticality:
         return None
     return business_criticality
+
+def get_current_business_owner(application):
+    if not "business_owners" in application["profile"]:
+        return None
+    return application["profile"]["business_owners"]
+
+def get_current_business_unit(application):
+    if not "business_unit" in application["profile"]:
+        return None
+    return application["profile"]["business_unit"]["guid"]
+
+def get_current_description(application):
+    if not "description" in application["profile"]:
+        return None
+    return application["profile"]["description"]
+
+def get_current_policy(application):
+    if not "policies" in application["profile"] or not application["profile"]["policies"]:
+        return None
+    return application["profile"]["policies"][0]["guid"]
+
+def get_current_tags(application):
+    if not "tags" in application["profile"]:
+        return None
+    return application["profile"]["tags"]
+
+def get_current_teams(application):
+    if not "teams" in application["profile"]:
+        return None
+    
+    inner_team_list = []
+    for team in application["profile"]["teams"]:
+        inner_team_list.append(team["guid"])
+    return inner_team_list
 
 def try_update_application(application, new_name, excel_headers, excel_sheet, row):
     business_criticality_new = get_business_criticality(excel_headers, excel_sheet, row)
@@ -196,6 +228,15 @@ def try_update_application(application, new_name, excel_headers, excel_sheet, ro
     policy_new= get_policy(excel_headers, excel_sheet, row)
     tags_new = get_tags(excel_headers, excel_sheet, row)
     teams_new = get_teams(excel_headers, excel_sheet, row)
+
+    business_owner_new = get_current_business_owner(application) if business_owner_new == None else business_owner_new
+    business_unit_new = get_current_business_unit(application) if business_unit_new == None else business_unit_new
+    description_new = get_current_description(application) if description_new == None else description_new
+    policy_new = get_current_policy(application) if policy_new == None else policy_new
+    tags_new = get_current_tags(application) if tags_new == None else tags_new
+    teams_new = get_current_teams(application) if teams_new == None else teams_new
+
+
 
     new_custom_fields = parse_new_custom_fields(excel_headers, excel_sheet, row)
     if new_custom_fields:
@@ -274,8 +315,8 @@ def update_all_applications(file_name, header_row, verbose):
                     status = update_application(excel_headers, excel_sheet, row)
                     print(f"Finished importing row {row-header_row}/{excel_sheet.max_row-header_row}")
                     print("---------------------------------------------------------------------------")
-                except NoExactMatchFoundException:
-                    status= NoExactMatchFoundException.get_message()
+                except NoExactMatchFoundException as nemfe:
+                    status= nemfe.get_message()
                 except Exception as e:
                     status = repr(e)
                 excel_sheet.cell(row = row, column = max_column+1).value=status
