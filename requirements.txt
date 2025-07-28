@@ -1,2 +1,2 @@
-veracode-api-py>=0.9.62
+veracode-api-py>=0.9.63
 openpyxl
